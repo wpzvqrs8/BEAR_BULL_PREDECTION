@@ -103,7 +103,22 @@ export default function ChartComponent({ data, chartType }: ChartComponentProps)
 
         if (data.type === 'history' && Array.isArray(data.data)) {
             // Full history load — replace everything
-            const sorted = [...data.data].sort((a: any, b: any) => a.time - b.time);
+            const sorted = [...data.data]
+                .sort((a: any, b: any) => a.time - b.time)
+                // Remove duplicate timestamps (keep last occurrence)
+                .filter((d: any, i: number, arr: any[]) => i === arr.length - 1 || d.time !== arr[i + 1].time)
+                // Ensure valid OHLC (malformed data causes invisible candles)
+                .map((d: any) => ({
+                    ...d,
+                    time: Number(d.time),
+                    open: Number(d.open ?? d.close),
+                    high: Math.max(Number(d.high ?? d.close), Number(d.open ?? d.close), Number(d.close)),
+                    low: Math.min(Number(d.low ?? d.close), Number(d.open ?? d.close), Number(d.close)),
+                    close: Number(d.close),
+                }))
+                // Filter out zero-width candles (all OHLC same — invisible)
+                .filter((d: any) => d.high > d.low || d.open !== d.close);
+
             allDataRef.current = sorted;
 
             const rows = sorted.map((d: any) =>
@@ -119,14 +134,16 @@ export default function ChartComponent({ data, chartType }: ChartComponentProps)
             }
 
         } else if (data.type === 'candle' || data.type === 'chart_candle') {
-            // Single bar update:
-            //  • chart_candle forming:true  → updates the current rightmost bar in-place (live OHLC)
-            //  • chart_candle forming:false → appends a completed minute bar
-            //  • candle                     → appends the resolved prediction bar
+            // Single bar update
+            const rawOpen = Number(data.open ?? data.close ?? data.price);
+            const rawClose = Number(data.close ?? data.price);
+            const rawHigh = Math.max(Number(data.high ?? rawClose), rawOpen, rawClose);
+            const rawLow = Math.min(Number(data.low ?? rawClose), rawOpen, rawClose);
+
             const point =
                 chartType === 'candle'
-                    ? { time: data.time, open: data.open, high: data.high, low: data.low, close: data.close }
-                    : { time: data.time, value: data.close };
+                    ? { time: Number(data.time), open: rawOpen, high: rawHigh, low: rawLow, close: rawClose }
+                    : { time: Number(data.time), value: rawClose };
 
             // Keep allDataRef in sync
             const idx = allDataRef.current.findIndex((d: any) => d.time === data.time);

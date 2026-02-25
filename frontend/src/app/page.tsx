@@ -65,7 +65,8 @@ export default function Home() {
 
   // ── WebSocket effect — reconnects on symbol OR timeframe change ──────────
   useEffect(() => {
-    const ws = new WebSocket('ws://localhost:8000/ws/stream');
+    const wsUrl = (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000') + '/ws/stream';
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
     setMarketClosed(false);
     setHistory([]);
