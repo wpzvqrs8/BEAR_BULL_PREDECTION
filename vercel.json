@@ -1,17 +1,5 @@
 {
-    "version": 2,
-    "buildCommand": "cd frontend && npm run build",
-    "outputDirectory": "frontend/.next",
-    "installCommand": "cd frontend && npm install",
-    "framework": "nextjs",
-    "rewrites": [
-        {
-            "source": "/api/:path*",
-            "destination": "https://your-backend-url.up.railway.app/api/:path*"
-        }
-    ],
-    "env": {
-        "NEXT_PUBLIC_BACKEND_URL": "https://your-backend-url.up.railway.app",
-        "NEXT_PUBLIC_WS_URL": "wss://your-backend-url.up.railway.app"
-    }
+    "_comment": "This file is intentionally minimal. Deploy frontend/ as the Vercel root directory.",
+    "_instructions": "In the Vercel dashboard: set Root Directory = frontend",
+    "_backend": "Deploy backend/ to Railway — see backend/railway.toml"
 }
