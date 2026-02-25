@@ -1,5 +1,1 @@
-{
-    "_comment": "This file is intentionally minimal. Deploy frontend/ as the Vercel root directory.",
-    "_instructions": "In the Vercel dashboard: set Root Directory = frontend",
-    "_backend": "Deploy backend/ to Railway — see backend/railway.toml"
-}
+{}
