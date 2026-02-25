@@ -1,0 +1,42 @@
+# ─── Python ───────────────────────────────────────────────────────────────────
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.so
+
+# ─── Environment & Secrets ────────────────────────────────────────────────────
+.env
+.env.local
+.env.production
+*.env
+
+# ─── Data files (huge CSVs - do not commit) ──────────────────────────────────
+datas/
+*.csv
+
+# ─── Trained model files (large binary files - do not commit) ─────────────────
+backend/models/*.pkl
+backend/models/*.json
+# Keep the models/ directory itself (with .gitkeep)
+
+# ─── Node / Next.js ──────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/.next/
+frontend/.vercel/
+frontend/.turbo/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# ─── Misc ─────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+.idea/
+.vscode/settings.json
