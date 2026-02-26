@@ -57,6 +57,19 @@ export default function Home() {
   useEffect(() => { setIsClient(true); }, []);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
+  // ── Fetch stored historical candles from Supabase on symbol change ────────
+  useEffect(() => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    fetch(`${backendUrl}/api/history/${activeSymbol}?limit=365`)
+      .then(r => r.json())
+      .then(json => {
+        if (json?.data?.length > 0) {
+          setLiveData({ type: 'history', data: json.data });
+        }
+      })
+      .catch(() => {/* DB unavailable — websocket will fill the chart */ });
+  }, [activeSymbol]);
+
   const resolved = history.filter(h => h.correct !== null);
   const correct = resolved.filter(h => h.correct === true).length;
   const accuracy = resolved.length > 0 ? ((correct / resolved.length) * 100).toFixed(1) : '—';

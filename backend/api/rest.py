@@ -1,7 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 import time
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 router = APIRouter()
 
@@ -14,7 +14,6 @@ class TrainRequest(BaseModel):
 class PredictRequest(BaseModel):
     symbol: str
 
-# Mock global state for simulation
 APP_STATE = {
     "is_training": False,
     "last_trained_model": None,
@@ -23,7 +22,7 @@ APP_STATE = {
 
 def mock_training_task(symbol: str, model_type: str):
     APP_STATE["is_training"] = True
-    time.sleep(5)  # Simulate training
+    time.sleep(5)
     APP_STATE["is_training"] = False
     APP_STATE["last_trained_model"] = f"{model_type}_{symbol}"
     APP_STATE["backtest_results"] = {
@@ -37,7 +36,6 @@ def mock_training_task(symbol: str, model_type: str):
 async def start_training(req: TrainRequest, background_tasks: BackgroundTasks):
     if APP_STATE["is_training"]:
         raise HTTPException(status_code=400, detail="Training already in progress")
-    
     background_tasks.add_task(mock_training_task, req.symbol, req.model_type)
     return {"message": "Training started in background", "symbol": req.symbol}
 
@@ -47,12 +45,27 @@ async def get_status():
 
 @router.post("/predict")
 async def make_prediction(req: PredictRequest):
-    # Output format specifically requested
     return {
-      "symbol": req.symbol,
-      "bull_probability": 0.65,
-      "bear_probability": 0.35,
-      "confidence_score": 0.8,
-      "model_used": APP_STATE["last_trained_model"] or "baseline_xgboost",
-      "timestamp": time.time()
+        "symbol": req.symbol,
+        "bull_probability": 0.65,
+        "bear_probability": 0.35,
+        "confidence_score": 0.8,
+        "model_used": APP_STATE["last_trained_model"] or "baseline_lgbm",
+        "timestamp": time.time()
     }
+
+# ── Historical candle endpoint (used by frontend on page load) ────────────────
+@router.get("/history/{symbol}")
+async def get_history(symbol: str, limit: int = 365) -> Dict[str, Any]:
+    """
+    Return stored daily candles for a symbol from Supabase.
+    Frontend calls this on page load to pre-populate the chart with past data.
+    """
+    try:
+        from api.db import fetch_candles
+        rows = fetch_candles(symbol.upper(), limit=min(limit, 500))
+        return {"symbol": symbol, "type": "history", "data": rows, "count": len(rows)}
+    except Exception as e:
+        # DB unavailable — return empty (websocket will fill in live data)
+        print(f"[REST] history/{symbol} error: {e}")
+        return {"symbol": symbol, "type": "history", "data": [], "count": 0}
