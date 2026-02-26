@@ -39,9 +39,13 @@ async def lifespan(app: FastAPI):
 
 
 async def _db_sync_loop():
-    """Save completed daily candles to Supabase every 30 minutes."""
-    INTERVAL = 30 * 60   # seconds
-    await asyncio.sleep(60)  # wait for buffers to fill first
+    """Save completed candles to Supabase.
+    - First sync: 2 minutes after startup (buffer is seeded by then)
+    - Then every 15 minutes
+    """
+    FIRST_WAIT  = 2  * 60   # seconds — wait for startup seed
+    INTERVAL    = 15 * 60   # seconds — periodic sync
+    await asyncio.sleep(FIRST_WAIT)
     while True:
         try:
             from api.db import upsert_candles, prune_old_candles
@@ -50,11 +54,13 @@ async def _db_sync_loop():
                 rows = list(buf)
                 if rows:
                     n = upsert_candles(symbol, rows)
-                    print(f"[DB sync] {symbol}: {n} rows upserted")
+                    if n:
+                        print(f"[DB sync] {symbol}: {n} rows upserted")
                     prune_old_candles(symbol)
         except Exception as e:
             print(f"[DB sync] Error: {e}")
         await asyncio.sleep(INTERVAL)
+
 
 
 app = FastAPI(

@@ -76,85 +76,108 @@ export default function Home() {
 
   const activeAsset = ASSETS.find(a => a.value === activeSymbol) ?? ASSETS[0];
 
-  // ── WebSocket effect — reconnects on symbol OR timeframe change ──────────
+  // ── WebSocket effect — auto-reconnects with exponential backoff ──────────
   useEffect(() => {
     const wsUrl = (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000') + '/ws/stream';
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    let ws: WebSocket;
+    let retryDelay = 1000;   // ms, doubles on each failure up to MAX_DELAY
+    const MAX_DELAY = 30000;
+    let destroyed = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = () => {
+      if (destroyed) return;
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        retryDelay = 1000;   // reset backoff on successful connect
+        ws.send(JSON.stringify({ symbol: activeSymbol, interval: activeTimeframe }));
+      };
+
+      ws.onclose = () => {
+        if (destroyed) return;
+        retryTimer = setTimeout(() => { retryDelay = Math.min(retryDelay * 2, MAX_DELAY); connect(); }, retryDelay);
+      };
+
+      ws.onerror = () => { try { ws.close(); } catch (_) { } };
+
+      ws.onmessage = (event) => {
+        if (!isPlayingRef.current) return;
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'market_closed') {
+          setMarketClosed(true);
+          setCurrentPrediction(null);
+
+        } else if (data.type === 'history') {
+          setMarketClosed(false);
+          setLiveData(data);
+
+        } else if (data.type === 'prediction') {
+          setMarketClosed(false);
+          pendingIdRef.current = data.candle_id;
+          setCurrentPrediction(data);
+          if (data.current_price) setCurrentPrice(data.current_price);
+          setHistory(prev => [{
+            id: data.candle_id,
+            predicted: data.predicted_direction,
+            actual: null,
+            bull_prob: data.bull_probability,
+            bear_prob: data.bear_probability,
+            price: data.current_price,
+            correct: null,
+          }, ...prev]);
+          if (data.resolve_in_seconds) {
+            setCountdown(prev => ({ ...prev, [data.candle_id]: data.resolve_in_seconds }));
+          }
+
+        } else if (data.type === 'prediction_update') {
+          setCurrentPrediction(data);
+          if (data.current_price) setCurrentPrice(data.current_price);
+          if (pendingIdRef.current !== null && data.remaining_seconds !== undefined) {
+            setCountdown(prev => ({ ...prev, [pendingIdRef.current!]: Math.ceil(data.remaining_seconds) }));
+          }
+
+        } else if (data.type === 'candle') {
+          setLiveData(data);
+          if (data.price) setCurrentPrice(data.price);
+          setCurrentPrediction(null);
+          pendingIdRef.current = null;
+          const finalDir = data.final_predicted || null;
+          setHistory(prev => prev.map(r => {
+            if (r.id !== data.candle_id) return r;
+            const scored = finalDir
+              ? finalDir === data.actual_direction
+              : r.predicted === data.actual_direction;
+            return {
+              ...r,
+              predicted: (finalDir as any) || r.predicted,
+              actual: data.actual_direction,
+              correct: scored,
+              reason: !scored ? data.reason : undefined,
+            };
+          }));
+
+        } else if (data.type === 'chart_candle') {
+          setLiveData(data);
+          if (data.price) setCurrentPrice(data.price);
+        }
+      };
+    }; // end connect()
+
     setMarketClosed(false);
     setHistory([]);
     setCurrentPrediction(null);
+    connect(); // initiate first connection
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ symbol: activeSymbol, interval: activeTimeframe }));
+    return () => {
+      destroyed = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      try { (wsRef.current as any)?.close(); } catch (_) { }
     };
-
-    ws.onmessage = (event) => {
-      if (!isPlayingRef.current) return;
-      const data = JSON.parse(event.data);
-
-      if (data.type === 'market_closed') {
-        setMarketClosed(true);
-        setCurrentPrediction(null);
-
-      } else if (data.type === 'history') {
-        setMarketClosed(false);
-        setLiveData(data);
-
-      } else if (data.type === 'prediction') {
-        setMarketClosed(false);
-        pendingIdRef.current = data.candle_id;
-        setCurrentPrediction(data);
-        if (data.current_price) setCurrentPrice(data.current_price);
-        setHistory(prev => [{
-          id: data.candle_id,
-          predicted: data.predicted_direction,
-          actual: null,
-          bull_prob: data.bull_probability,
-          bear_prob: data.bear_probability,
-          price: data.current_price,
-          correct: null,
-        }, ...prev]);
-        if (data.resolve_in_seconds) {
-          setCountdown(prev => ({ ...prev, [data.candle_id]: data.resolve_in_seconds }));
-        }
-
-      } else if (data.type === 'prediction_update') {
-        setCurrentPrediction(data);
-        if (data.current_price) setCurrentPrice(data.current_price);
-        if (pendingIdRef.current !== null && data.remaining_seconds !== undefined) {
-          setCountdown(prev => ({ ...prev, [pendingIdRef.current!]: Math.ceil(data.remaining_seconds) }));
-        }
-
-      } else if (data.type === 'candle') {
-        setLiveData(data);
-        if (data.price) setCurrentPrice(data.price);
-        setCurrentPrediction(null);
-        pendingIdRef.current = null;
-        const finalDir = data.final_predicted || null;
-        setHistory(prev => prev.map(r => {
-          if (r.id !== data.candle_id) return r;
-          const scored = finalDir
-            ? finalDir === data.actual_direction
-            : r.predicted === data.actual_direction;
-          return {
-            ...r,
-            predicted: (finalDir as any) || r.predicted,
-            actual: data.actual_direction,
-            correct: scored,
-            reason: !scored ? data.reason : undefined,
-          };
-        }));
-
-      } else if (data.type === 'chart_candle') {
-        setLiveData(data);
-        if (data.price) setCurrentPrice(data.price);
-      }
-    };
-
-    return () => ws.close();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSymbol, activeTimeframe]);
+
 
   const handleTimeframeChange = (tf: string) => {
     setActiveTimeframe(tf);
