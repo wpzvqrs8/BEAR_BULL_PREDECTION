@@ -36,13 +36,13 @@ last_known_prices: Dict[str, float] = {}
 
 # ── Per-asset model registry ─────────────────────────────────────────────────
 # Each asset has its own dedicated LightGBM model with asset-tuned hyperparams.
-_models:       Dict[str, Any]           = {"BTC-USD": None, "ETH-USD": None, "GOLD": None}
-_feature_masks: Dict[str, Optional[List[int]]] = {"BTC-USD": None, "ETH-USD": None, "GOLD": None}
+_models:       Dict[str, Any]           = {"BTC-USD": None, "ETH-USD": None, "GOLD": None, "USD-PHP": None}
+_feature_masks: Dict[str, Optional[List[int]]] = {"BTC-USD": None, "ETH-USD": None, "GOLD": None, "USD-PHP": None}
 _model_trained = False   # single flag: True once all startup loading is done
 
 # ── Per-symbol prediction smoothing ──────────────────────────────────────────
 # EMA-smooth consecutive predictions to reduce flip-flopping near 50% confidence
-_prev_bull: Dict[str, float] = {"BTC-USD": 0.5, "ETH-USD": 0.5, "GOLD": 0.5}
+_prev_bull: Dict[str, float] = {"BTC-USD": 0.5, "ETH-USD": 0.5, "GOLD": 0.5, "USD-PHP": 0.5}
 
 # ── News sentiment cache ──────────────────────────────────────────────────────
 _news_cache: Dict[str, Dict] = {}   # {symbol: {score, expires_at}}
@@ -56,6 +56,7 @@ _BINANCE_SYMBOL_MAP = {
     "BTC-USD": "BTCUSDT",
     "ETH-USD": "ETHUSDT",
     "BNB-USD": "BNBUSDT",
+    "USD-PHP": "USDTPHP",
 }
 
 def _fetch_binance_klines(symbol: str, interval: str = "1d", limit: int = 1000) -> List[Dict]:
@@ -598,6 +599,11 @@ _ASSET_MODEL_FILES = {
         "meta":   _MODELS_DIR / "gold_meta.json",
         "mask":   None,
     },
+    "USD-PHP": {
+        "model":  _MODELS_DIR / "usdphp_model.pkl",
+        "meta":   _MODELS_DIR / "usdphp_meta.json",
+        "mask":   None,
+    },
 }
 
 _historical_real_data: List[Dict] = []
@@ -658,6 +664,8 @@ def _startup_train(symbol: str = "BTC-USD"):
     _load_asset_model("ETH-USD")
     print("[Startup] GOLD model (from yfinance daily)...")
     _load_asset_model("GOLD")
+    print("[Startup] USD-PHP model (from yfinance daily)...")
+    _load_asset_model("USD-PHP")
 
     # Seed BTC chart with 300 Binance daily candles
     print("[Startup] Seeding BTC chart from Binance (300 daily candles)...")
@@ -833,19 +841,45 @@ def _startup_seed_gold():
 
 
 # ═══════════════════════════════════════════════════════════════
-# 8-C. Universal dispatch wrappers (BTC/ETH → Binance, GOLD → yfinance)
-#      These call the untouched existing BTC helpers for BTC/ETH.
+# 8-C. USD-PHP: Handled via Binance (USDT/PHP pair is identical to USD/PHP)
+# ═══════════════════════════════════════════════════════════════
+_usdphp_seeded = False
+
+# Binance has a highly liquid USDT/PHP pair that trades 24/7.
+# We will use the standard Binance helpers for live price and charting.
+# This ensures it updates instantly just like BTC and ETH.
+
+def _startup_seed_usdphp():
+    """Seeds candle_buffers['USD-PHP'] with 300 daily Binance candles."""
+    global _usdphp_seeded
+    if _usdphp_seeded:
+        return
+    print("[USD-PHP] Seeding chart from Binance USDT/PHP (300 daily candles)...")
+    seed = _fetch_binance_klines("USD-PHP", interval="1d", limit=300)
+    if seed:
+        last_known_prices["USD-PHP"] = seed[-1]["close"]
+        candle_buffers["USD-PHP"] = deque(seed, maxlen=BUFFER_SIZE)
+        print(f"[USD-PHP] Seeded {len(seed)} candles, last={seed[-1]['close']:.4f}")
+    else:
+        candle_buffers["USD-PHP"] = deque(maxlen=BUFFER_SIZE)
+        last_known_prices["USD-PHP"] = 57.50   # realistic fallback
+        print("[USD-PHP] Binance unavailable — buffer empty, price fallback 57.50")
+    _usdphp_seeded = True
+
+
+# ═══════════════════════════════════════════════════════════════
+# 8-D. Universal dispatch wrappers (BTC/ETH/USD-PHP → Binance, GOLD → yfinance)
 # ═══════════════════════════════════════════════════════════════
 def _any_live_price(symbol: str) -> Optional[float]:
     if symbol == "GOLD":
         return _get_gold_live_price()
-    return _get_live_price(symbol)   # existing Binance helper (BTC & ETH)
+    return _get_live_price(symbol)
 
 
 def _any_forming_kline(symbol: str) -> Optional[Dict]:
     if symbol == "GOLD":
         return _get_gold_forming_kline()
-    return _get_forming_kline(symbol)   # existing Binance helper
+    return _get_forming_kline(symbol)
 
 
 def _any_make_live_candle(symbol: str, candle_id: int,
@@ -863,13 +897,12 @@ def _any_make_live_candle(symbol: str, candle_id: int,
             return {"type": "candle", "candle_id": candle_id, "symbol": symbol,
                     **candle, "price": round(cl, 2),
                     "actual_direction": "bull" if cl >= op else "bear"}
-        # Fallback
         cl = last_known_prices.get(symbol, 2300.0)
         return {"type": "candle", "candle_id": candle_id, "symbol": symbol,
                 "time": int(time.time()), "open": cl, "high": cl, "low": cl,
                 "close": cl, "volume": 0.0, "price": round(cl, 2),
                 "actual_direction": "bull"}
-    return _make_live_candle(symbol, candle_id, open_price, interval)   # existing BTC/ETH
+    return _make_live_candle(symbol, candle_id, open_price, interval)
 
 
 
@@ -1086,11 +1119,13 @@ async def websocket_endpoint(websocket: WebSocket):
         if not _model_trained:
             await asyncio.get_event_loop().run_in_executor(None, _startup_train, "BTC-USD")
 
-        # Seed ETH and GOLD buffers on first connection (non-blocking)
+        # Seed ETH, GOLD and USD-PHP buffers on first connection (non-blocking)
         if not _eth_seeded:
             await asyncio.get_event_loop().run_in_executor(None, _startup_seed_eth)
         if not _gold_seeded:
             await asyncio.get_event_loop().run_in_executor(None, _startup_seed_gold)
+        if not _usdphp_seeded:
+            await asyncio.get_event_loop().run_in_executor(None, _startup_seed_usdphp)
 
         # ── Send history immediately ─────────────────────────────────
         history_candles = _get_last_60_for_chart(symbol)

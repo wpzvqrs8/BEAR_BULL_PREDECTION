@@ -27,7 +27,9 @@ def get_conn() -> psycopg2.extensions.connection:
     if _conn is None or _conn.closed:
         if not _DATABASE_URL:
             raise RuntimeError("DATABASE_URL env var is not set.")
-        _conn = psycopg2.connect(_DATABASE_URL, connect_timeout=10)
+        # psycopg2 throws "invalid dsn" for query args like ?pgbouncer=true
+        clean_url = _DATABASE_URL.split("?")[0]
+        _conn = psycopg2.connect(clean_url, connect_timeout=10)
         _conn.autocommit = False
     return _conn
 
@@ -54,7 +56,7 @@ def init_db() -> None:
         with conn.cursor() as cur:
             cur.execute(CREATE_TABLE_SQL)
         conn.commit()
-        print("[db] Tables ready ✓")
+        print("[db] Tables ready [SUCCESS]")
     except Exception as e:
         print(f"[db] init_db error: {e}")
 

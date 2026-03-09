@@ -23,6 +23,7 @@ const ASSETS = [
   { label: 'BTC-USD', value: 'BTC-USD', icon: '₿', color: 'text-yellow-400' },
   { label: 'ETH-USD', value: 'ETH-USD', icon: 'Ξ', color: 'text-purple-400' },
   { label: 'GOLD', value: 'GOLD', icon: '◈', color: 'text-amber-500' },
+  { label: 'USD-PHP', value: 'USD-PHP', icon: '₱', color: 'text-green-400' },
 ];
 
 type PredictionRecord = {
@@ -213,42 +214,24 @@ export default function Home() {
           </div>
 
           <div className="space-y-4">
-            {/* ── Asset Selector ── */}
-            <div className="relative">
-              <label className="text-xs text-gray-500 uppercase tracking-wider block mb-1.5">Target Asset</label>
-              <button
-                onClick={() => setAssetDropdown(!assetDropdown)}
-                className="w-full flex items-center justify-between bg-[#27272a] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-lg px-3 py-2.5 transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <span className={`text-xl font-bold ${activeAsset.color}`}>{activeAsset.icon}</span>
-                  <span className="font-semibold text-sm">{activeAsset.label}</span>
-                </div>
-                <ChevronDown size={14} className={`text-gray-400 transition-transform ${assetDropdown ? 'rotate-180' : ''}`} />
-              </button>
-
-              {assetDropdown && (
-                <div className="absolute z-50 top-full mt-1 w-full bg-[#18181b] border border-[#3f3f46] rounded-lg shadow-2xl overflow-hidden">
-                  {ASSETS.map(asset => (
-                    <button
-                      key={asset.value}
-                      onClick={() => handleAssetChange(asset.value)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#27272a] transition-colors text-left ${activeSymbol === asset.value ? 'bg-blue-600/15' : ''}`}
-                    >
-                      <span className={`text-lg font-bold ${asset.color}`}>{asset.icon}</span>
-                      <div>
-                        <div className="text-sm font-semibold">{asset.label}</div>
-                        <div className="text-[10px] text-gray-500">
-                          {asset.value === 'BTC-USD' ? 'Bitcoin · Binance Live' :
-                            asset.value === 'ETH-USD' ? 'Ethereum · Binance Live' :
-                              'Gold Futures · COMEX / yfinance'}
-                        </div>
-                      </div>
-                      {activeSymbol === asset.value && <CheckCircle size={13} className="ml-auto text-blue-400" />}
-                    </button>
-                  ))}
-                </div>
-              )}
+            {/* ── Asset Selector (Buttons) ── */}
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider block mb-2">Target Asset</label>
+              <div className="grid grid-cols-2 gap-2">
+                {ASSETS.map(asset => (
+                  <button
+                    key={asset.value}
+                    onClick={() => handleAssetChange(asset.value)}
+                    className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border transition-all ${activeSymbol === asset.value
+                      ? 'bg-[#27272a] border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
+                      : 'bg-[#18181b] border-[#27272a] hover:bg-[#27272a] hover:border-[#3f3f46]'
+                      }`}
+                  >
+                    <span className={`text-lg font-bold ${asset.color}`}>{asset.icon}</span>
+                    <span className="font-semibold text-sm truncate">{asset.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="pt-3 border-t border-[#27272a]">
